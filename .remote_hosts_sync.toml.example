@@ -1,0 +1,32 @@
+[[hosts]]
+name = "Production Server"
+type = "sftp"              # ftp | sftp | rsync | scp
+host = "example.com"
+port = 22
+user = "deploy"
+password = "secret"        # либо путь к ssh-ключу: /home/user/.ssh/id_rsa
+path = "/var/www/project"
+excludes_local = ["node_modules/", ".git/", "*.log"]
+excludes_remote = ["cache/", "logs/"]
+
+[[hosts]]
+name = "Staging Server"
+type = "rsync"
+host = "staging.example.com"
+port = 22
+user = "deploy"
+password = "/home/user/.ssh/staging_key"
+path = "/var/www/staging"
+excludes_local = ["node_modules/", ".git/"]
+excludes_remote = ["cache/"]
+
+[[hosts]]
+name = "Development FTP"
+type = "ftp"
+host = "dev.example.com"
+port = 21
+user = "developer"
+password = "dev_password"
+path = "/public_html"
+excludes_local = [".git/", "*.tmp"]
+excludes_remote = ["temp/"]

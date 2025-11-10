@@ -1,0 +1,15 @@
+# Configuration with sensitive data
+.remote_hosts_sync.toml
+
+# Log files
+.remote_hosts_sync.log
+*.log
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
