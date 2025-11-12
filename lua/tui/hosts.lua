@@ -119,7 +119,7 @@ function M.add_host()
   
   if not vim.fn.filereadable(config_file) then
     -- Create template
-    local template = [[
+    local template = [=[
 [[hosts]]
 name = "New Host"
 type = "sftp"
@@ -130,7 +130,8 @@ password = "password"
 path = "/var/www/project"
 excludes_local = ["node_modules/", ".git/"]
 excludes_remote = ["cache/", "logs/"]
-]]
+]=]
+
     local file = io.open(config_file, 'w')
     if file then
       file:write(template)
