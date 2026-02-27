@@ -1,145 +1,476 @@
-Техническое задание
 
-Проект: TUI-плагин для Neovim — альтернатива функции Remote Hosts из PhpStorm
-Цель: Создание инструмента для синхронизации локальных и удалённых файлов (FTP, SFTP, rsync и др.) с возможностью управления подключениями и файловыми операциями через TUI-интерфейс внутри Neovim.
 
-1. Общие сведения
+# Technical Specification
 
-Плагин предназначен для разработчиков, работающих с проектами, размещёнными на удалённых серверах. Основная цель — обеспечить удобный интерфейс для:
+## Project: `remote_hosts_sync`
 
-добавления и редактирования удалённых хостов;
+### Neovim Remote Hosts & Auto-Deployment System
 
-синхронизации файлов между локальной и удалённой машиной;
+---
 
-просмотра структуры удалённых директорий;
+# 1. Objective
 
-управления загрузкой и скачиванием файлов в соответствии со структурой проекта.
+Develop a production-grade Neovim plugin that provides functionality equivalent to Remote Hosts and automatic deployment features found in JetBrains IDEs such as PhpStorm and WebStorm.
 
-2. Основной функционал
-2.1 Управление хостами
+The plugin must:
 
-Поддержка нескольких хостов (до 10) в конфигурационном файле .remote_hosts_sync.toml, расположенном в корне проекта.
+* Automatically upload files on save
+* Support full project synchronization
+* Provide remote file browsing via TUI
+* Handle file conflicts with diff preview
+* Maintain persistent SSH connection
+* Support SSH password authentication
+* Operate asynchronously without blocking Neovim
+* Support Linux, macOS, and Windows via WSL
+* Be implemented entirely in Lua for Neovim ≥ 0.9
 
-Формат хранения данных:
+---
+
+# 2. Supported Protocols
+
+Mandatory support:
+
+* SSH
+* SFTP
+* rsync over SSH
+
+Not supported:
+
+* FTP
+* FTPS
+
+---
+
+# 3. Configuration System
+
+## 3.1 Configuration Files
+
+Project-level configuration:
+
+```
+.remote_hosts_sync.toml
+```
+
+Global configuration:
+
+```
+~/.config/nvim/remote_hosts_sync.toml
+```
+
+Project configuration overrides global configuration.
+
+---
+
+## 3.2 Configuration Schema
+
+```toml
+active_host = "production"
 
 [[hosts]]
-name = "Production Server"
-type = "sftp"              # ftp | sftp | rsync | scp | etc.
+name = "production"
+type = "sftp"
 host = "example.com"
 port = 22
 user = "deploy"
-password = "secret"        # либо путь к ssh-ключу
-path = "/var/www/project"
+
+# Authentication (one required)
+ssh_key = "~/.ssh/id_rsa"
+# OR
+password = "secret"
+# OR
+password_env = "DEPLOY_PASSWORD"
+
+remote_path = "/var/www/project"
+
 excludes_local = ["node_modules/", ".git/"]
 excludes_remote = ["cache/", "logs/"]
+```
 
+---
 
-Возможность добавления, редактирования и удаления хостов через TUI-интерфейс.
+## 3.3 Host Rules
 
-Проверка соединения при добавлении/редактировании хоста.
+* Maximum 10 hosts per project
+* Only ONE active host at a time
+* Active host receives automatic uploads
+* Non-active hosts may be browsed but not auto-synced
 
-Поддержка аутентификации по паролю и SSH-ключу.
+---
 
-2.2 Основные команды
+# 4. Authentication Requirements
 
-:RemoteOpenTree [host_name] — открыть древо удалённого сервера, аналогично neo-tree, с отображением структуры директорий.
+## 4.1 Mandatory Authentication Support
 
-:RemoteCloseTree — закрыть древо удалённого сервера.
+The system MUST support:
 
-:RemoteUpload [path] — загрузить указанный локальный файл/папку на сервер, сохраняя структуру директорий.
+* SSH key authentication
+* ssh-agent authentication
+* SSH password authentication (REQUIRED)
 
-:RemoteDownload [path] — скачать файл/папку с сервера, сохраняя соответствие путей.
+---
 
-:RemoteSync — синхронизировать изменённые локальные файлы с сервером (основная команда).
+## 4.2 Password Handling Rules
 
-:RemoteFetch — скачать все файлы из текущей или выбранной папки.
+Passwords:
 
-:RemotePush — загрузить все файлы из текущей или выбранной папки на сервер.
+* MAY be stored in TOML
+* MUST NOT be logged
+* MUST NOT appear in debug output
+* MUST NOT appear in process list (ps/top)
+* MUST NOT be embedded in command arguments
 
-2.3 Работа с файлами
+If `password_env` is defined:
 
-Автоматическая синхронизация изменённых локальных файлов при сохранении (autocmd BufWritePost).
+* The password MUST be read using `os.getenv`
+* The environment variable MUST NOT be logged
 
-Возможность отключать синхронизацию для отдельных файлов или директорий, указанных в excludes_local.
+---
 
-При загрузке или скачивании файлов структура директорий должна полностью соответствовать (./local/components → <path>/local/components).
+## 4.3 Password Execution Strategy
 
-Возможность ручного скачивания/обновления выбранного файла через TUI.
+Password MUST be provided securely via environment injection.
 
-Логирование всех действий (загрузка, скачивание, ошибки соединения) в отдельный лог-файл .remote_hosts_sync.log.
+Permitted pattern:
 
-2.4 Интерфейс TUI
+```
+SSHPASS=<password> sshpass -e ssh ...
+```
 
-Интерфейс реализуется на Lua с использованием библиотек telescope.nvim и/или nui.nvim.
+Implementation constraints:
 
-Основные экраны:
+* Password must be passed via environment table in plenary.job
+* Never concatenate password into command string
+* All arguments must be escaped
 
-Список хостов (с действиями: добавить, редактировать, удалить, подключиться).
+Interactive PTY handling is permitted but not required.
 
-Древо файлов на сервере с возможностью раскрытия/сворачивания директорий.
+---
 
-Контекстное меню для действий с файлами (скачать, загрузить, обновить, открыть в буфере).
+# 5. Persistent Connection Management
 
-Поддержка клавиатурных сокращений:
+## 5.1 Persistent SSH Session
 
-r — обновить содержимое текущей директории;
+The system MUST:
 
-d — скачать файл/папку;
+* Maintain a persistent SSH session
+* Detect connection drop
+* Attempt reconnect every 5 seconds
+* Stop reconnect after configurable retry limit (default: 5)
+* Expose connection state to UI
 
-u — загрузить файл/папку;
+---
 
-Enter — открыть файл;
+## 5.2 Reconnect Policy
 
-q — закрыть окно TUI.
+On connection failure:
 
-Поддержка отображения статуса соединения и текущего активного хоста.
+1. Mark state as disconnected
+2. Start timer
+3. Retry every 5 seconds
+4. Stop after max attempts
+5. Log each attempt
 
-3. Дополнительный функционал
+---
 
-Фоновая синхронизация: возможность запуска фонового процесса для постоянного мониторинга изменений и синхронизации.
+# 6. Automatic Upload on Save
 
-Сравнение файлов: встроенная команда для сравнения локальной и удалённой версии файла (diff).
+## 6.1 Trigger
 
-Автоматическое переподключение: при потере соединения попытка переподключиться с интервалом 5 секунд.
+Use:
 
-Индикация состояния: статусная строка с текущим действием (например, “Uploading…”, “Connected to staging”).
+```
+autocmd BufWritePost
+```
 
-Настройки: глобальные параметры в ~/.config/nvim/remote_hosts_sync.toml, переопределяемые локальным файлом проекта.
+---
 
-4. Технические требования
+## 6.2 Execution Flow
 
-Язык реализации: Lua
+On file save:
 
-Совместимость: Neovim ≥ 0.9
+1. Verify active host exists
+2. Verify file not excluded
+3. Resolve absolute local path
+4. Compute remote target path
+5. Check remote modification time
+6. Detect conflict
+7. If no conflict, upload via SFTP
+8. Log result
 
-Зависимости:
+---
 
-plenary.nvim
+## 6.3 Conflict Detection
 
-nui.nvim или telescope.nvim
+Conflict occurs if:
 
-rsync, lftp или ssh — для взаимодействия с удалёнными серверами
+* Remote file exists AND
+* Remote mtime > local mtime
 
-Поддержка ОС: Linux, macOS, Windows (через WSL)
+On conflict, user must be prompted with:
 
-Плагин должен быть кроссплатформенным и распространяться публично (через GitHub).
+* Cancel
+* Overwrite remote
+* Show diff
 
-5. Безопасность
+No automatic overwrite allowed when conflict detected.
 
-Конфиденциальные данные (пароли, ключи) не хранятся в открытом виде при возможности — предпочтительно использование SSH-ключей.
+---
 
-Исключить передачу данных по незащищённым протоколам, если возможно (FTP → FTPS).
+# 7. Diff Handling
 
-Все действия с удалёнными файлами должны выполняться только после подтверждения подключения к хосту.
+On "Show diff":
 
-6. Структура проекта
+1. Download remote file to temporary path
+2. Open vertical diff using:
+
+```
+vimdiff
+```
+
+Local file must not be overwritten.
+
+Temporary file must be cleaned up after session.
+
+---
+
+# 8. Manual Commands
+
+## 8.1 RemoteSync
+
+Full project synchronization using rsync.
+
+Requirements:
+
+* Use flags:
+
+  * `--archive`
+  * `--delete`
+  * `--checksum`
+* Respect excludes_local
+* Provide dry-run mode
+* Display summary after completion
+* Operate asynchronously
+
+---
+
+## 8.2 RemotePush
+
+Upload entire selected directory via rsync.
+
+---
+
+## 8.3 RemoteFetch
+
+Download selected directory via rsync.
+
+---
+
+# 9. Remote File Tree (TUI)
+
+## 9.1 Requirements
+
+* Lazy directory loading
+* Asynchronous listing
+* Directory caching
+* No full-tree redraw on single change
+* Keyboard-driven navigation
+
+---
+
+## 9.2 Keybindings
+
+| Key   | Action            |
+| ----- | ----------------- |
+| Enter | Open file         |
+| r     | Refresh directory |
+| u     | Upload file       |
+| d     | Download file     |
+| q     | Close tree        |
+
+---
+
+## 9.3 UI Stack
+
+Mandatory:
+
+* nui.nvim for tree UI
+* plenary.nvim for async jobs
+
+Telescope must NOT be used for tree rendering.
+
+---
+
+# 10. Logging
+
+Log file:
+
+```
+.remote_hosts_sync.log
+```
+
+Must log:
+
+* Upload
+* Download
+* Sync
+* Reconnect attempts
+* Errors
+
+Must NOT log:
+
+* Passwords
+* Environment variables
+* Raw command strings containing secrets
+
+---
+
+# 11. Internal Architecture
+
+Required structure:
+
+```
 remote_hosts_sync/
 ├── lua/
-│   ├── core/             # базовая логика, утилиты, обработка TOML
-│   ├── tui/              # интерфейсные модули
-│   ├── sync/             # синхронизация и работа с файлами
-│   └── commands.lua      # регистрация команд Neovim
+│   ├── config/
+│   ├── core/
+│   ├── transport/
+│   ├── sync/
+│   ├── tui/
+│   └── commands.lua
 ├── plugin/
 │   └── remote_hosts_sync.lua
-├── README.md
-└── LICENSE
+```
+
+---
+
+## 11.1 Required Modules
+
+### core/state.lua
+
+* Store active host
+* Store connection object
+* Store sync state
+* Store reconnect state
+
+### core/logger.lua
+
+* Safe logging
+* Secret redaction
+
+### config/loader.lua
+
+* Parse TOML
+* Validate schema
+
+### transport/ssh.lua
+
+* Persistent session
+* Reconnect logic
+* Password injection
+
+### transport/sftp.lua
+
+* Upload file
+* Download file
+* List directory
+* Stat file
+
+### transport/rsync.lua
+
+* Full sync
+* Push
+* Fetch
+* Dry-run mode
+
+### sync/watcher.lua
+
+* BufWritePost handler
+
+### tui/tree.lua
+
+* Render tree
+* Lazy expand
+* Trigger actions
+
+---
+
+# 12. Asynchronous Requirements
+
+All remote operations MUST:
+
+* Use plenary.job or vim.loop
+* Never block UI
+* Handle stdout/stderr asynchronously
+* Propagate errors via callback or promise-style pattern
+
+Blocking system calls are forbidden.
+
+---
+
+# 13. Security Constraints
+
+* All shell arguments must be escaped
+* No string concatenation for command building
+* Use array-based argument passing
+* Validate remote paths
+* Prevent command injection
+* Never execute arbitrary user input directly
+
+---
+
+# 14. Cross-Platform Constraints
+
+Supported environments:
+
+* Linux
+* macOS
+* Windows via WSL
+
+The plugin must assume Unix-like shell environment.
+
+Windows native SSH is not required.
+
+---
+
+# 15. Error Handling
+
+The plugin must gracefully handle:
+
+* Authentication failure
+* Permission denied
+* File not found
+* SSH timeout
+* Network interruption
+* Rsync failure
+
+The plugin must never crash Neovim.
+
+All errors must be logged and surfaced to user.
+
+---
+
+# 16. Performance Constraints
+
+* No UI blocking
+* No full-tree redraw when updating single node
+* Large sync must display progress
+* Directory cache must reduce repeated remote calls
+
+---
+
+# 17. Acceptance Criteria
+
+The plugin is considered complete only if:
+
+* Saving a file uploads it immediately to active host
+* Password authentication works reliably
+* Full project sync works with checksum validation
+* Conflict detection prevents unsafe overwrite
+* Diff preview opens correctly
+* Remote tree loads lazily and asynchronously
+* SSH reconnects automatically
+* Password never appears in logs or process list
+* UI remains responsive during all operations
+
+
+
