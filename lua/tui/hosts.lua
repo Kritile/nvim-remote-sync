@@ -51,8 +51,7 @@ function M.show_hosts()
           vim.notify('Connected to ' .. selection.value.name, vim.log.levels.INFO)
         end
       end)
-      
-      -- Add mapping to edit host (Ctrl-e)
+
       map('i', '<C-e>', function()
         local selection = action_state.get_selected_entry()
         if selection then
@@ -60,28 +59,25 @@ function M.show_hosts()
           M.edit_host(selection.value)
         end
       end)
-      
-      -- Add mapping to delete host (Ctrl-d)
+
       map('i', '<C-d>', function()
         local selection = action_state.get_selected_entry()
         if selection then
           M.delete_host(selection.value)
-          -- Refresh picker
           actions.close(prompt_bufnr)
-          M.show_hosts()
+          M.show_hosts()  -- рекурсивно обновляем список
         end
       end)
-      
-      -- Add mapping to test connection (Ctrl-t)
+
       map('i', '<C-t>', function()
         local selection = action_state.get_selected_entry()
         if selection then
           M.test_connection(selection.value)
         end
       end)
-      
+
       return true
-    end,
+    end,  -- <-- запятая здесь нужна
   }):find()
 end
 
@@ -123,7 +119,7 @@ function M.add_host()
   
   if not vim.fn.filereadable(config_file) then
     -- Create template
-    local template = [[
+    local template = [=[
 [[hosts]]
 name = "New Host"
 type = "sftp"
@@ -134,7 +130,8 @@ password = "password"
 path = "/var/www/project"
 excludes_local = ["node_modules/", ".git/"]
 excludes_remote = ["cache/", "logs/"]
-]]
+]=]
+
     local file = io.open(config_file, 'w')
     if file then
       file:write(template)
